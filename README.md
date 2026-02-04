@@ -5,7 +5,6 @@
 [Rendered analysis notebook (HTML)](results/Wearable-data-analysis.html)
 
 ---
-
 ## Project Overview
 
 This project analyzes daily activity data from a Fitbit wearable to explore how **behavioral patterns** and **energy expenditure** vary across weekdays and weekends.
