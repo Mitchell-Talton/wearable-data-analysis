@@ -2,7 +2,7 @@
 **Behavioral Patterns and Energy Expenditure from Fitbit Data**
 
 **View the full analysis:**  
-[Rendered analysis notebook (HTML)](results/wearable-data-analysis.html)
+[Rendered analysis notebook (HTML)](results/Wearable-data-analysis.html)
 
 ---
 ## Project Overview
