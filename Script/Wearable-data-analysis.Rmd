@@ -1,0 +1,199 @@
+---
+title: "Fitbit Daily Activity: Behaviroal Patterns and Energy Expenditure"
+author: "Mitchell Talton"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true 
+---
+## Overview
+This notebook explores daily activity patterns from a public Fitbit dataset, focusing on:
+1) **Behavioral variability** (weekday vs weekend step patterns)  
+2) **Physiological relationship** (steps vs calories burned)
+
+To improve interpretability, analysis is performed at the **individual-user** level.
+
+## Load Libraries
+
+```{r}
+library(tidyverse)
+library(lubridate)
+
+theme_set(theme_minimal(base_size=13))
+```
+
+## Load Data
+
+```{r}
+daily_data <- read_csv("dailyActivity_merged.csv", show_col_types = FALSE)
+
+glimpse(daily_data)
+
+```
+## Data Cleaning Data and Feature Engineering
+```{r}
+daily_data <- daily_data %>%
+  mutate(
+    ActivityDate = as.Date(ActivityDate, format = "%m/%d/%Y"),
+    DayOfWeek = wday(ActivityDate, label = TRUE, abbr = FALSE),
+    DayType = if_else(DayOfWeek %in% c("Saturday", "Sunday"), "Weekend", "Weekday")
+  )
+```
+
+```{r}
+stopifnot(!all(is.na(daily_data$ActivityDate)))
+summary(daily_data$TotalSteps)
+```
+
+## Single-User Selection
+
+```{r}
+#Wearable datasets often contain multiple participants. For clear visual storytelling, I will focus on one user.
+user_id <- daily_data$Id %>% unique() %>% .[1]
+
+user_data <- daily_data %>%
+  filter(Id == user_id) %>%
+  filter(!is.na(TotalSteps), !is.na(Calories)) %>%
+  arrange(ActivityDate)
+
+range(user_data$ActivityDate)
+
+```
+
+## Behavioral Pattern: Steps by Day Type
+**Question:** Do step counts differ between weekdays and weekends for this user? 
+```{r}
+ggplot(user_data, aes(x = ActivityDate, y = TotalSteps, color = DayType)) +
+  geom_point(alpha = 0.65) +
+  geom_smooth(se = FALSE, method = "loess") +
+  labs(
+    title = "Daily Step Count by Day Type",
+    subtitle = paste("User:", user_id),
+    x = "Date",
+    y = "Total Steps",
+    color = "Day Type"
+  )
+```
+**Interpretation:** Weekday activity is more consistent, while weekend activity shows greater variability—suggesting differences in routine structure across the week.
+
+## Physiological Context: Steps vs Calories
+**Question:** How strongly does locomotor activity (steps) relate to energy expenditure (calories)?
+
+```{r}
+user_eff <- user_data %>%
+  filter(TotalSteps >= 2000) %>%  
+  mutate(CaloriesPerStep = Calories / TotalSteps)
+
+summary(user_eff$CaloriesPerStep)
+
+ggplot(user_eff, aes(x = DayType, y = CaloriesPerStep)) +
+  geom_boxplot(width = 0.5, outlier.shape = NA, alpha = 0.5) +
+  geom_jitter(width = 0.12, alpha = 0.6) +
+  labs(
+    title = "Energy Cost per Step by Day Type",
+    subtitle = "Calories/step (proxy for intensity or non-step expenditure); low-step days removed",
+    x = "Day Type",
+    y = "Calories per Step"
+  ) +
+  theme_minimal()
+
+user_eff %>%
+  group_by(DayType) %>%
+  summarise(
+    Days = n(),
+    Mean_CalPerStep = mean(CaloriesPerStep),
+    Median_CalPerStep = median(CaloriesPerStep),
+    .groups = "drop"
+  )
+```
+**Interpretation:**Calories per step serves as a simple proxy for energy cost per unit movement. Differences by day type may reflect changes in activity intensity (e.g., more vigorous movement on weekends) or additional non-step energy expenditure. Low-step days were excluded to reduce ratio inflation.
+
+## Quantifying Weekday vs. Weekend Differences
+
+```{r}
+library(scales)
+
+summary_table <- user_eff %>%
+  group_by(DayType) %>%
+  summarise(
+    Days = n(),
+    MeanSteps = mean(TotalSteps),
+    MedianSteps = median(TotalSteps),
+    MeanCalories = mean(Calories),
+    MedianCalories = median(Calories),
+    MeanCalPerStep = mean(CaloriesPerStep),
+    MedianCalPerStep = median(CaloriesPerStep),
+    .groups = "drop"
+  )
+
+summary_table
+
+```
+
+```{r}
+# Wide format for quick comparisons
+diff_table <- summary_table %>%
+  select(DayType, MeanSteps, MeanCalories, MeanCalPerStep) %>%
+  pivot_wider(names_from = DayType, values_from = c(MeanSteps, MeanCalories, MeanCalPerStep)) %>%
+  mutate(
+    Steps_Diff = MeanSteps_Weekend - MeanSteps_Weekday,
+    Calories_Diff = MeanCalories_Weekend - MeanCalories_Weekday,
+    CalPerStep_Diff = MeanCalPerStep_Weekend - MeanCalPerStep_Weekday
+  )
+
+diff_table
+
+
+```
+**Takeaway:** Weekday vs weekend differences are summarized above to support interpretation of behavioral structure (steps) and relative energy cost (calories/step).
+
+## Activity Consistency 
+```{r}
+consistency <- user_data %>%
+  group_by(DayType) %>%
+  summarise(
+    Days = n(),
+    MeanSteps = mean(TotalSteps, na.rm = TRUE),
+    SDSteps = sd(TotalSteps, na.rm = TRUE),
+    CVSteps = SDSteps / MeanSteps,
+    .groups = "drop"
+  )
+
+consistency
+```
+**Interpretation:** CV (coefficient of variation) reflects consistency. Lower CV indicates more stable routine-driven activity patterns.
+
+```{r}
+ggplot(user_data, aes(x = DayType, y = TotalSteps)) +
+  geom_boxplot(width = 0.5, outlier.shape = NA, alpha = 0.5) +
+  geom_jitter(width = 0.12, alpha = 0.6) +
+  labs(
+    title = "Step Count Distribution by Day Type",
+    subtitle = paste("User:", user_id),
+    x = "Day Type",
+    y = "Total Steps"
+  )
+
+```
+
+## Calories per Step vs. Steps:
+```{r}
+ggplot(user_eff, aes(x = TotalSteps, y = CaloriesPerStep, color = DayType)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(se = FALSE, method = "loess") +
+  labs(
+  title = "Calories per Step Decreases with Higher Daily Step Counts",
+  subtitle = "Reflects baseline energy expenditure being distributed across greater movement volume",
+  x = "Total Steps",
+  y = "Calories per Step",
+  color = "Day Type"
+)
+```
+**Interpretation:**Calories per step decreases as daily step count increases because total daily energy expenditure includes baseline metabolic processes (e.g., BMR and non-locomotor activity). As step count rises, this fixed baseline is distributed across greater movement volume, lowering the calories-per-step ratio. This demonstrates a limitation of ratio-based metrics and reinforces the importance of separating behavioral volume (steps) from physiological cost when interpreting wearable data.
+
+## Key Findings (Single-User View)
+
+**Behavioral structure:** Weekday step counts were more consistent, while weekends exhibited greater variability, suggesting differences in routine-driven activity patterns.
+**Energy context:** Calories per step differed modestly by day type after excluding low-step days, reflecting how baseline metabolic expenditure interacts with activity volume.
+**Methodological insight:** Separating behavioral metrics (steps) from physiological context (energy expenditure) reduced misleading artifacts and improved interpretability of wearable data.
